@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/ollama/ollama/api"
 )
 
 func TestHeaderParsing(t *testing.T) {
@@ -534,5 +536,48 @@ func TestFunctionConvertAndAdd(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHarmonyMessageHandler_DoesNotEmitToolCallsWithoutTools(t *testing.T) {
+	h := NewHarmonyMessageHandler()
+	h.Init(nil, nil, nil)
+
+	in := `<|start|>assistant<|channel|>analysis to=functions.container.exec<|message|>{"cmd":"echo hi"}<|end|>`
+	content, thinking, calls, err := h.Add(in, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if thinking != "" {
+		t.Fatalf("expected empty thinking, got %q", thinking)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("expected no tool calls, got %v", calls)
+	}
+	if content != `{"cmd":"echo hi"}` {
+		t.Fatalf("expected content to include suppressed tool call arguments, got %q", content)
+	}
+}
+
+func TestHarmonyMessageHandler_EmitsToolCallsWithTools(t *testing.T) {
+	h := NewHarmonyMessageHandler()
+	h.Init([]api.Tool{{Type: "function", Function: api.ToolFunction{Name: "container.exec"}}}, nil, nil)
+
+	in := `<|start|>assistant<|channel|>analysis to=functions.container.exec<|message|>{"cmd":"echo hi"}<|end|>`
+	content, thinking, calls, err := h.Add(in, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if content != "" || thinking != "" {
+		t.Fatalf("expected empty content/thinking for tool call, got content=%q thinking=%q", content, thinking)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %v", calls)
+	}
+	if calls[0].Function.Name != "container.exec" {
+		t.Fatalf("unexpected tool name: %q", calls[0].Function.Name)
+	}
+	if calls[0].Function.Arguments.ToMap()["cmd"] != "echo hi" {
+		t.Fatalf("unexpected tool arguments: %v", calls[0].Function.Arguments.ToMap())
 	}
 }

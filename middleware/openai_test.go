@@ -550,6 +550,48 @@ func TestChatMiddleware(t *testing.T) {
 			},
 		},
 		{
+			name: "chat handler with tool_choice none",
+			body: `{
+				"model": "test-model",
+				"messages": [
+					{"role": "user", "content": "What's the weather like in Paris?"}
+				],
+				"stream": true,
+				"tool_choice": "none",
+				"tools": [{
+					"type": "function",
+					"function": {
+						"name": "get_weather",
+						"description": "Get the current weather",
+						"parameters": {
+							"type": "object",
+							"required": ["location"],
+							"properties": {
+								"location": {
+									"type": "string",
+									"description": "The city and state"
+								}
+							}
+						}
+					}
+				}]
+			}`,
+			req: api.ChatRequest{
+				Model: "test-model",
+				Messages: []api.Message{
+					{
+						Role:    "user",
+						Content: "What's the weather like in Paris?",
+					},
+				},
+				Options: map[string]any{
+					"temperature": 1.0,
+					"top_p":       1.0,
+				},
+				Stream: &True,
+			},
+		},
+		{
 			name: "chat handler error forwarding",
 			body: `{
 				"model": "test-model",

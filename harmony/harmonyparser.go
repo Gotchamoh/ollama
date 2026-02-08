@@ -263,11 +263,12 @@ const (
 // HarmonyMessageHandler processes harmony events and accumulates content appropriately.
 // This is a higher level interface that maps harmony concepts into ollama concepts
 type HarmonyMessageHandler struct {
-	state           harmonyMessageState
-	HarmonyParser   *HarmonyParser
-	FunctionNameMap *FunctionNameMap
-	toolAccumulator *HarmonyToolCallAccumulator
-	convertedTools  map[string]struct{}
+	state            harmonyMessageState
+	HarmonyParser    *HarmonyParser
+	FunctionNameMap  *FunctionNameMap
+	toolAccumulator  *HarmonyToolCallAccumulator
+	toolCallsEnabled bool
+	convertedTools   map[string]struct{}
 }
 
 // NewHarmonyMessageHandler creates a new message handler
@@ -299,18 +300,28 @@ func (h *HarmonyMessageHandler) AddContent(content string, toolParser *HarmonyTo
 			switch event.Header.Channel {
 			case "analysis":
 				if event.Header.Recipient != "" {
-					h.state = harmonyMessageState_ToolCalling
-					// event.Header.Recipient is the tool name, something like
-					// "browser.search" for a built-in, or "functions.calc" for a
-					// custom one
-					toolParser.SetToolName(event.Header.Recipient)
+					if h.toolCallsEnabled {
+						h.state = harmonyMessageState_ToolCalling
+						// event.Header.Recipient is the tool name, something like
+						// "browser.search" for a built-in, or "functions.calc" for a
+						// custom one
+						toolParser.SetToolName(event.Header.Recipient)
+					} else {
+						// Tools disabled: treat this as normal content to avoid emitting tool calls.
+						h.state = harmonyMessageState_Normal
+					}
 				} else {
 					h.state = harmonyMessageState_Thinking
 				}
 			case "commentary":
 				if event.Header.Recipient != "" {
-					h.state = harmonyMessageState_ToolCalling
-					toolParser.SetToolName(event.Header.Recipient)
+					if h.toolCallsEnabled {
+						h.state = harmonyMessageState_ToolCalling
+						toolParser.SetToolName(event.Header.Recipient)
+					} else {
+						// Tools disabled: treat this as normal content to avoid emitting tool calls.
+						h.state = harmonyMessageState_Normal
+					}
 				} else {
 					h.state = harmonyMessageState_Normal
 				}
@@ -409,6 +420,7 @@ func (h *HarmonyMessageHandler) Init(tools []api.Tool, lastMessage *api.Message,
 
 	// Initialize tool accumulator
 	h.toolAccumulator = h.CreateToolParser()
+	h.toolCallsEnabled = len(tools) > 0
 
 	// Process tools and return renamed versions
 	if len(tools) == 0 {
@@ -435,7 +447,7 @@ func (h *HarmonyMessageHandler) Add(s string, done bool) (content string, thinki
 
 	// tool calls always happen one at a time, and always at the end of a message,
 	// so for simplicity we defer parsing them until we know we're done
-	if done {
+	if done && h.toolCallsEnabled {
 		toolName, raw := h.toolAccumulator.Drain()
 		if toolName != nil {
 			name := strings.TrimPrefix(*toolName, "functions.")

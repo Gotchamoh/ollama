@@ -109,6 +109,7 @@ type ChatCompletionRequest struct {
 	TopP             *float64        `json:"top_p"`
 	ResponseFormat   *ResponseFormat `json:"response_format"`
 	Tools            []api.Tool      `json:"tools"`
+	ToolChoice       any             `json:"tool_choice,omitempty"`
 	Reasoning        *Reasoning      `json:"reasoning,omitempty"`
 	ReasoningEffort  *string         `json:"reasoning_effort,omitempty"`
 	Logprobs         *bool           `json:"logprobs"`
@@ -523,6 +524,11 @@ func FromChatRequest(r ChatCompletionRequest) (*api.ChatRequest, error) {
 		}
 	}
 
+	tools := r.Tools
+	if isToolChoiceNone(r.ToolChoice) {
+		tools = nil
+	}
+
 	options := make(map[string]any)
 
 	switch stop := r.Stop.(type) {
@@ -606,12 +612,26 @@ func FromChatRequest(r ChatCompletionRequest) (*api.ChatRequest, error) {
 		Format:          format,
 		Options:         options,
 		Stream:          &r.Stream,
-		Tools:           r.Tools,
+		Tools:           tools,
 		Think:           think,
 		Logprobs:        r.Logprobs != nil && *r.Logprobs,
 		TopLogprobs:     r.TopLogprobs,
 		DebugRenderOnly: r.DebugRenderOnly,
 	}, nil
+}
+
+func isToolChoiceNone(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.EqualFold(strings.TrimSpace(t), "none")
+	case map[string]any:
+		if typ, ok := t["type"].(string); ok && strings.EqualFold(strings.TrimSpace(typ), "none") {
+			return true
+		}
+	}
+	return false
 }
 
 func nameFromToolCallID(messages []Message, toolCallID string) string {
