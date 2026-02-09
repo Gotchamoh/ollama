@@ -370,6 +370,47 @@ func TestFromResponsesRequest_Tools(t *testing.T) {
 	}
 }
 
+func TestFromResponsesRequest_ToolChoiceNone_DisablesTools(t *testing.T) {
+	reqJSON := `{
+		"model": "gpt-oss:20b",
+		"input": "hello",
+		"tool_choice": "none",
+		"tools": [
+			{
+				"type": "function",
+				"name": "shell",
+				"description": "Runs a shell command",
+				"strict": false,
+				"parameters": {
+					"type": "object",
+					"properties": {
+						"command": {
+							"type": "array",
+							"items": {"type": "string"},
+							"description": "The command to execute"
+						}
+					},
+					"required": ["command"]
+				}
+			}
+		]
+	}`
+
+	var req ResponsesRequest
+	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
+		t.Fatalf("failed to unmarshal request: %v", err)
+	}
+
+	chatReq, err := FromResponsesRequest(req)
+	if err != nil {
+		t.Fatalf("failed to convert request: %v", err)
+	}
+
+	if len(chatReq.Tools) != 0 {
+		t.Fatalf("expected no tools when tool_choice=none, got %d", len(chatReq.Tools))
+	}
+}
+
 func TestFromResponsesRequest_FunctionCallOutput(t *testing.T) {
 	// Test a complete tool call round-trip:
 	// 1. User message asking about weather

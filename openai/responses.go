@@ -310,9 +310,9 @@ type ResponsesRequest struct {
 
 	Tools []ResponsesTool `json:"tools,omitempty"`
 
-	// TODO(drifkin): tool_choice is not supported. We could support "none" by not
-	// passing tools, but the other controls like `"required"` cannot be generally
-	// supported.
+	// optional. Supports "none" (string or {type:"none"}) to disable tool calling.
+	// Other OpenAI controls like `"required"` are not generally supported.
+	ToolChoice any `json:"tool_choice,omitempty"`
 
 	// optional, default is false
 	Stream *bool `json:"stream,omitempty"`
@@ -434,12 +434,14 @@ func FromResponsesRequest(r ResponsesRequest) (*api.ChatRequest, error) {
 
 	// Convert tools from Responses API format to api.Tool format
 	var tools []api.Tool
-	for _, t := range r.Tools {
-		tool, err := convertTool(t)
-		if err != nil {
-			return nil, err
+	if !isToolChoiceNone(r.ToolChoice) {
+		for _, t := range r.Tools {
+			tool, err := convertTool(t)
+			if err != nil {
+				return nil, err
+			}
+			tools = append(tools, tool)
 		}
-		tools = append(tools, tool)
 	}
 
 	// Handle text format (e.g. json_schema)
@@ -726,7 +728,7 @@ func ToResponse(model, responseID, itemID string, chatResponse api.ChatResponse,
 		Output:             output,
 		Error:              nil, // Only populated on failure
 		Tools:              tools,
-		ToolChoice:         "auto", // Default value
+		ToolChoice:         toolChoiceOrDefault(request.ToolChoice),
 		Truncation:         truncation,
 		ParallelToolCalls:  true, // Default value
 		Text:               text,
@@ -754,6 +756,13 @@ func ToResponse(model, responseID, itemID string, chatResponse api.ChatResponse,
 		SafetyIdentifier: nil, // Not supported
 		PromptCacheKey:   nil, // Not supported
 	}
+}
+
+func toolChoiceOrDefault(v any) any {
+	if v == nil {
+		return "auto"
+	}
+	return v
 }
 
 // Streaming events: <https://platform.openai.com/docs/api-reference/responses-streaming>
@@ -938,7 +947,7 @@ func (c *ResponsesStreamConverter) buildResponseObject(status string, output []a
 		"output":               output,
 		"error":                nil,
 		"tools":                tools,
-		"tool_choice":          "auto",
+		"tool_choice":          toolChoiceOrDefault(c.request.ToolChoice),
 		"truncation":           truncation,
 		"parallel_tool_calls":  true,
 		"text":                 map[string]any{"format": textFormat},
